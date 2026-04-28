@@ -1,6 +1,5 @@
 node_modules
 .webpack
-.env
 .serverless
 imported-db
 docker
@@ -9,11 +8,10 @@ docker
 .vscode
 
 defi/src/cli/tmp
-defi/dev-metrics/app-data
-defi/dev-metrics/runner/repo
 defi/src/api2/local-scripts
 defi/.safe_commit_hash
 defi/.current_commit_hash
 */api2-cache
 *.log
 temp/
+config.bat
