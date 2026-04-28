@@ -1,6 +1,5 @@
 node_modules
 .webpack
-.env
 .serverless
 imported-db
 docker
@@ -15,3 +14,4 @@ defi/.current_commit_hash
 */api2-cache
 *.log
 temp/
+config.bat
