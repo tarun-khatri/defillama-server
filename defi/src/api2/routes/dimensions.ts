@@ -8,6 +8,29 @@ import { readRouteData, storeRouteData } from "../cache/file-cache";
 import { getTimeSDaysAgo, timeSToUnix, } from "../utils/time";
 import { errorResponse, fileResponse, successResponse, validateProRequest } from "./utils";
 
+// Convert a per-protocol breakdown object whose top-level keys are chain
+// keys (e.g. "ethereum", "xdai", "avax") into the same shape but keyed by
+// the chain *display label* (e.g. "Ethereum", "Gnosis", "Avalanche"), so the
+// keys match the protocol.chains[] array we already return in display form.
+// Issue: DefiLlama/defillama-app#1768.
+export function transformBreakdownChainKeys(breakdown: any): any {
+  if (!breakdown || typeof breakdown !== "object") return breakdown;
+  const out: { [chainLabel: string]: { [subModule: string]: number } } = {};
+  for (const [chainKey, sub] of Object.entries(breakdown)) {
+    const label = getChainLabelFromKey(chainKey);
+    if (!sub || typeof sub !== "object") continue;
+    if (!out[label]) out[label] = {};
+    for (const [subModule, value] of Object.entries(sub as Record<string, unknown>)) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) continue;
+      // accumulate so that two raw keys mapping to the same label
+      // (defensive — shouldn't happen with current data) don't drop entries.
+      out[label][subModule] = (out[label][subModule] ?? 0) + numericValue;
+    }
+  }
+  return out;
+}
+
 function formatChartData(data: any = {}) {
   const result = [];
   for (const key in data) {
@@ -155,7 +178,14 @@ async function getOverviewProcess({
     if (summary)
       protocolDataKeys.forEach(key => res[key] = summary[key])
 
-    // sometimes a protocol is diabled or id is changed, we should disregard these data 
+    // The cached summary keys breakdown24h/breakdown30d by chain *key*
+    // (e.g. "xdai", "avax"), but res.chains is already in display label form
+    // ("Gnosis", "Avalanche"). Re-key the breakdowns so a consumer can join
+    // them on the same value without mapping. Closes #1768 in defillama-app.
+    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
+    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
+
+    // sometimes a protocol is diabled or id is changed, we should disregard these data
     if (!summary && !info) {
       // console.log('no data found', _id, info)
       return null
@@ -224,7 +254,11 @@ async function getCategoryData({ recordType, cacheData, category, chain }: { rec
     if (summary)
       protocolDataKeys.forEach(key => res[key] = summary[key])
 
-    // sometimes a protocol is diabled or id is changed, we should disregard these data 
+    // Same chain-key → chain-label normalisation as getOverviewProcess.
+    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
+    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
+
+    // sometimes a protocol is diabled or id is changed, we should disregard these data
     if (!summary && !info) {
       // console.log('no data found', _id, info)
       return null
@@ -240,7 +274,7 @@ async function getCategoryData({ recordType, cacheData, category, chain }: { rec
   if (!response.totalAllTime) response.totalAllTime = protocolTotalAllTimeSum
 
   return response
-  
+
   function getProtocolCategories(info: any): Array<string> {
     if (!info) return [];
     // we treat tags same as category and use labels (not slugs) for keys, only use slugs on storage and query
