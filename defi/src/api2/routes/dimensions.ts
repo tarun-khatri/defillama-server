@@ -21,11 +21,12 @@ export function transformBreakdownChainKeys(breakdown: any): any {
     if (!sub || typeof sub !== "object") continue;
     if (!out[label]) out[label] = {};
     for (const [subModule, value] of Object.entries(sub as Record<string, unknown>)) {
-      const numericValue = Number(value);
-      if (!Number.isFinite(numericValue)) continue;
+      // strict: only accept actual finite numbers — Number(null) / Number(false) / Number("")
+      // all coerce to 0 and would silently survive a Number.isFinite(Number(value)) check.
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
       // accumulate so that two raw keys mapping to the same label
       // (defensive — shouldn't happen with current data) don't drop entries.
-      out[label][subModule] = (out[label][subModule] ?? 0) + numericValue;
+      out[label][subModule] = (out[label][subModule] ?? 0) + value;
     }
   }
   return out;
@@ -178,13 +179,6 @@ async function getOverviewProcess({
     if (summary)
       protocolDataKeys.forEach(key => res[key] = summary[key])
 
-    // The cached summary keys breakdown24h/breakdown30d by chain *key*
-    // (e.g. "xdai", "avax"), but res.chains is already in display label form
-    // ("Gnosis", "Avalanche"). Re-key the breakdowns so a consumer can join
-    // them on the same value without mapping. Closes #1768 in defillama-app.
-    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
-    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
-
     // sometimes a protocol is diabled or id is changed, we should disregard these data
     if (!summary && !info) {
       // console.log('no data found', _id, info)
@@ -193,6 +187,14 @@ async function getOverviewProcess({
 
     if (!summary?.recordCount) return null; // if there are no data points, we should filter out the protocol
     if (summary?.totalAllTime) protocolTotalAllTimeSum += summary.totalAllTime
+
+    // The cached summary keys breakdown24h/breakdown30d by chain *key*
+    // (e.g. "xdai", "avax"), but res.chains is already in display label form
+    // ("Gnosis", "Avalanche"). Re-key the breakdowns so a consumer can join
+    // them on the same value without mapping. Closes #1768 in defillama-app.
+    // Done after the early returns so we don't transform protocols we drop.
+    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
+    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
 
     protocolInfoKeys.filter(key => info?.[key]).forEach(key => res[key] = info?.[key])
     res.id = res.defillamaId ?? res.id
@@ -254,10 +256,6 @@ async function getCategoryData({ recordType, cacheData, category, chain }: { rec
     if (summary)
       protocolDataKeys.forEach(key => res[key] = summary[key])
 
-    // Same chain-key → chain-label normalisation as getOverviewProcess.
-    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
-    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
-
     // sometimes a protocol is diabled or id is changed, we should disregard these data
     if (!summary && !info) {
       // console.log('no data found', _id, info)
@@ -266,6 +264,11 @@ async function getCategoryData({ recordType, cacheData, category, chain }: { rec
 
     if (!summary?.recordCount) return null; // if there are no data points, we should filter out the protocol
     if (summary?.totalAllTime) protocolTotalAllTimeSum += summary.totalAllTime
+
+    // Same chain-key → chain-label normalisation as getOverviewProcess.
+    // Done after the early returns so we don't transform protocols we drop.
+    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
+    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
 
     protocolInfoKeys.filter(key => info?.[key]).forEach(key => res[key] = info?.[key])
     res.id = res.defillamaId ?? res.id

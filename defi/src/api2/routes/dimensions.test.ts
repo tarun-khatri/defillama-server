@@ -47,23 +47,36 @@ describe("transformBreakdownChainKeys", () => {
   });
 
   test("merges entries when two raw keys map to the same label (defensive)", () => {
-    // Simulate (defensively) two raw keys that resolve to the same label.
-    // In practice the input shouldn't contain duplicates, but the function
-    // should still sum rather than silently overwrite.
-    const input: any = {
-      ethereum: { v2: 100 },
-      // direct duplicate of a key that already maps to "Ethereum" — using the
-      // exact same raw key is the only realistic duplication path, and we
-      // sum to avoid losing entries:
-    };
-    input.ethereum = { v2: 100, v3: 25 }; // overwrite same key in object literal — acts like single entry
+    // getChainLabelFromKey falls back to capitalize-first-letter for keys it
+    // doesn't have an explicit mapping for, so two distinct raw keys ("foo"
+    // and "Foo") both produce label "Foo". This is the only realistic way
+    // two raw keys collide on a label and is what the accumulation branch
+    // exists for.
+    const input = {
+      foo: { v1: 100 },
+      Foo: { v1: 50, v2: 7 },
+    } as any;
     const out = transformBreakdownChainKeys(input);
-    expect(out.Ethereum).toEqual({ v2: 100, v3: 25 });
+    expect(Object.keys(out)).toEqual(["Foo"]);
+    expect(out.Foo).toEqual({ v1: 150, v2: 7 });
   });
 
-  test("ignores non-numeric sub-module values", () => {
+  test("ignores non-numeric sub-module values (incl. null/false/string/array)", () => {
+    // Number(null) === 0, Number(false) === 0, Number("") === 0,
+    // Number([]) === 0 — all finite. A naive Number.isFinite(Number(value))
+    // filter would silently coerce these to 0; the strict typeof check rejects
+    // them.
     const input: any = {
-      ethereum: { v2: 100, weird: "not-a-number", alsoBad: null },
+      ethereum: {
+        v2: 100,
+        nullV: null,
+        falseV: false,
+        emptyStrV: "",
+        arrayV: [],
+        stringNumV: "42",
+        nan: NaN,
+        infV: Infinity,
+      },
     };
     const out = transformBreakdownChainKeys(input);
     expect(out.Ethereum).toEqual({ v2: 100 });
