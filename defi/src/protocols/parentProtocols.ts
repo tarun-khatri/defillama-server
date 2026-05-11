@@ -3698,7 +3698,6 @@ const parentProtocols: IParentProtocol[] = [
     cmcId: null,
     chains: [],
     twitter: "Cod3xOrg",
-    deadUrl: true,
   },
   {
     id: "parent#ajna",
@@ -6055,7 +6054,6 @@ const parentProtocols: IParentProtocol[] = [
     chains: [],
     twitter: "SwapModeFi",
     github: ["swapmode"],
-    deadUrl: true,
   },
   {
     id: "parent#superswap",
@@ -7025,7 +7023,6 @@ const parentProtocols: IParentProtocol[] = [
     chains: [],
     twitter: "GooseFX1",
     github: ["GooseFX1"],
-    deadUrl: true,
   },
   {
     id: "parent#seamless-protocol",
