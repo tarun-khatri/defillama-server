@@ -8,28 +8,32 @@ import { readRouteData, storeRouteData } from "../cache/file-cache";
 import { getTimeSDaysAgo, timeSToUnix, } from "../utils/time";
 import { errorResponse, fileResponse, successResponse, validateProRequest } from "./utils";
 
-// Convert a per-protocol breakdown object whose top-level keys are chain
-// keys (e.g. "ethereum", "xdai", "avax") into the same shape but keyed by
-// the chain *display label* (e.g. "Ethereum", "Gnosis", "Avalanche"), so the
-// keys match the protocol.chains[] array we already return in display form.
-// Issue: DefiLlama/defillama-app#1768.
-export function transformBreakdownChainKeys(breakdown: any): any {
-  if (!breakdown || typeof breakdown !== "object") return breakdown;
-  const out: { [chainLabel: string]: { [subModule: string]: number } } = {};
-  for (const [chainKey, sub] of Object.entries(breakdown)) {
-    const label = getChainLabelFromKey(chainKey);
+// Build a `chainKeys` lookup map from a per-protocol breakdown object whose
+// top-level keys are chain keys (e.g. "ethereum", "xdai", "avax").
+//
+// Returns a flat { [displayLabel]: chainKey } map so a consumer can join
+// `protocol.chains[]` (which is in display-label form) against
+// `protocol.breakdown24h` / `breakdown30d` (which is keyed by raw chain
+// keys) without having to maintain its own mapping table.
+//
+// Example output: { "Ethereum": "ethereum", "Gnosis": "xdai",
+//                   "Avalanche": "avax", "OP Mainnet": "optimism", ... }
+//
+// This is an *additive* field — the underlying `breakdown24h`/`breakdown30d`
+// shape is untouched, so existing consumers that already index by raw chain
+// key keep working. Issue: DefiLlama/defillama-app#1768.
+export function buildChainKeysMap(breakdown: any): { [label: string]: string } | undefined {
+  if (!breakdown || typeof breakdown !== "object") return undefined;
+  const out: { [label: string]: string } = {};
+  for (const chainKey of Object.keys(breakdown)) {
+    const sub = (breakdown as any)[chainKey];
     if (!sub || typeof sub !== "object") continue;
-    if (!out[label]) out[label] = {};
-    for (const [subModule, value] of Object.entries(sub as Record<string, unknown>)) {
-      // strict: only accept actual finite numbers — Number(null) / Number(false) / Number("")
-      // all coerce to 0 and would silently survive a Number.isFinite(Number(value)) check.
-      if (typeof value !== "number" || !Number.isFinite(value)) continue;
-      // accumulate so that two raw keys mapping to the same label
-      // (defensive — shouldn't happen with current data) don't drop entries.
-      out[label][subModule] = (out[label][subModule] ?? 0) + value;
-    }
+    const label = getChainLabelFromKey(chainKey);
+    // first-writer-wins: if two raw keys somehow map to the same label
+    // (defensive — shouldn't happen with current data), keep the first.
+    if (out[label] === undefined) out[label] = chainKey;
   }
-  return out;
+  return Object.keys(out).length ? out : undefined;
 }
 
 function formatChartData(data: any = {}) {
@@ -189,12 +193,17 @@ async function getOverviewProcess({
     if (summary?.totalAllTime) protocolTotalAllTimeSum += summary.totalAllTime
 
     // The cached summary keys breakdown24h/breakdown30d by chain *key*
-    // (e.g. "xdai", "avax"), but res.chains is already in display label form
-    // ("Gnosis", "Avalanche"). Re-key the breakdowns so a consumer can join
-    // them on the same value without mapping. Closes #1768 in defillama-app.
-    // Done after the early returns so we don't transform protocols we drop.
-    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
-    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
+    // (e.g. "xdai", "avax"), but res.chains is in display-label form
+    // ("Gnosis", "Avalanche"), so consumers can't join them directly.
+    // Expose an additive `chainKeys` lookup ({ "Avalanche": "avax", ... })
+    // without modifying the existing breakdown shape — keeps current
+    // consumers working. Refs defillama-app#1768.
+    // Done after the early returns so we don't compute for protocols we drop.
+    const chainKeys24h = buildChainKeysMap(res.breakdown24h)
+    const chainKeys30d = buildChainKeysMap(res.breakdown30d)
+    if (chainKeys24h || chainKeys30d) {
+      res.chainKeys = { ...(chainKeys30d ?? {}), ...(chainKeys24h ?? {}) }
+    }
 
     protocolInfoKeys.filter(key => info?.[key]).forEach(key => res[key] = info?.[key])
     res.id = res.defillamaId ?? res.id
@@ -265,10 +274,13 @@ async function getCategoryData({ recordType, cacheData, category, chain }: { rec
     if (!summary?.recordCount) return null; // if there are no data points, we should filter out the protocol
     if (summary?.totalAllTime) protocolTotalAllTimeSum += summary.totalAllTime
 
-    // Same chain-key → chain-label normalisation as getOverviewProcess.
-    // Done after the early returns so we don't transform protocols we drop.
-    res.breakdown24h = transformBreakdownChainKeys(res.breakdown24h)
-    res.breakdown30d = transformBreakdownChainKeys(res.breakdown30d)
+    // Same additive `chainKeys` lookup as in getOverviewProcess — leaves
+    // breakdown24h/breakdown30d untouched so existing consumers keep working.
+    const chainKeys24h = buildChainKeysMap(res.breakdown24h)
+    const chainKeys30d = buildChainKeysMap(res.breakdown30d)
+    if (chainKeys24h || chainKeys30d) {
+      res.chainKeys = { ...(chainKeys30d ?? {}), ...(chainKeys24h ?? {}) }
+    }
 
     protocolInfoKeys.filter(key => info?.[key]).forEach(key => res[key] = info?.[key])
     res.id = res.defillamaId ?? res.id
