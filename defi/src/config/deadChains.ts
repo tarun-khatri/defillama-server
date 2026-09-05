@@ -14,6 +14,7 @@ export const deadChains = [
   'sx',  // deprecated in favor of sx rollup?
   'titan',  // https://tokenize.exchange/ the entity behind it is insolvent?
   'mint', // shutdown 2026-04-17: https://x.com/Mint_Blockchain/status/2044980026819617147
+  'thundercore', // halted 2026-09-01 at block 236120709, every public rpc returns the same head
 ]
 
 
